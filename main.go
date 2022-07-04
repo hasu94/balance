@@ -53,7 +53,7 @@ func main() {
 }
 
 // add Зачисляет средства на счет пользователя. Добавляет в таблицу транзакций строку "пользователь id получил amount копеек"
-func (s *Server) add(ctx context.Context, id UserId, amount int64) error {
+func (s *Server) add(ctx context.Context, userId UserId, amount int64) error {
 	tx, err := s.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		return fmt.Errorf("can't start transaction: %w", err)
@@ -61,7 +61,7 @@ func (s *Server) add(ctx context.Context, id UserId, amount int64) error {
 	rows, err := tx.QueryxContext(ctx, `
 		INSERT INTO transactions (id, user_from, user_to, amount, created_at)
 			VALUES (gen_random_uuid(), null, $1, $2, NOW());
-	`, id, amount)
+	`, userId, amount)
 	if err != nil {
 		tx.Rollback() // тут и далее везде в обработке ошибок нужно сделать rollback транзакции и обработать ошибку от этой функции
 		return fmt.Errorf("can't run query: %w", err)
@@ -79,17 +79,17 @@ func (s *Server) add(ctx context.Context, id UserId, amount int64) error {
 // "у пользователя id посчитан баланс для последней транзакции насчисления средств transactionNumRecv, транзакции списания средств transcationNumSend,
 // он составляет столько-то копеек". (см. описание функции вычисления баланса) Если баланс пользователя выше, чем amount, то добавляем строку в таблицу transactions
 // "у пользователя id списано amount копеек"
-func (s *Server) withdraw(ctx context.Context, id UserId, amount int64) error {
+func (s *Server) withdraw(ctx context.Context, userId UserId, amount int64) error {
 	tx, err := s.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		return fmt.Errorf("can't start transaction: %w", err)
 	}
 
-	balance, transactionNumSend, transactionNumRecv, err := getBalance(ctx, tx, id)
+	balance, transactionNumSend, transactionNumRecv, err := getBalance(ctx, tx, userId)
 	if err != nil {
 		return fmt.Errorf("can't get balance: %w", err)
 	}
-	err = updateBalance(ctx, id, balance, transactionNumSend, transactionNumRecv, tx)
+	err = updateBalance(ctx, userId, balance, transactionNumSend, transactionNumRecv, tx)
 	if err != nil {
 		return fmt.Errorf("can't update balance: %w", err)
 	}
@@ -99,9 +99,9 @@ func (s *Server) withdraw(ctx context.Context, id UserId, amount int64) error {
 	}
 
 	rows, err := tx.QueryxContext(ctx, `
-		INSERT INTO transactions (id, user_from, user_to, amount, created_at)
+		INSERT INTO transactions (userId, user_from, user_to, amount, created_at)
 			VALUES (gen_random_uuid(), $1, null, $2, NOW());
-	`, id, amount)
+	`, userId, amount)
 	if err != nil {
 		return fmt.Errorf("can't run query: %w", err)
 	}
@@ -155,19 +155,19 @@ func (s *Server) transfer(ctx context.Context, fromId UserId, toId UserId, amoun
 }
 
 // balance Вычисляет баланс у пользователя id и обновляет его в таблице accounts.
-func (s *Server) balance(ctx context.Context, id UserId) (int64, error) {
+func (s *Server) balance(ctx context.Context, userId UserId) (int64, error) {
 	tx, err := s.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		return 0, fmt.Errorf("can't start transaction: %w", err)
 	}
 
-	balance, transactionNumSend, transactionNumRecv, err := getBalance(ctx, tx, id)
+	balance, transactionNumSend, transactionNumRecv, err := getBalance(ctx, tx, userId)
 	if err != nil {
 		err = tx.Rollback()
 		return 0, fmt.Errorf("can't get balance: %w", err)
 	}
 
-	err = updateBalance(ctx, id, balance, transactionNumSend, transactionNumRecv, tx)
+	err = updateBalance(ctx, userId, balance, transactionNumSend, transactionNumRecv, tx)
 	if err != nil {
 		err = tx.Rollback()
 		// ...
@@ -186,11 +186,11 @@ func (s *Server) balance(ctx context.Context, id UserId) (int64, error) {
 // Далее вычисляет сумму всех операций начисления с номерами больше, чем номер транзакции начисления записанной в таблице accounts,
 // Вычисляет сумму всех операций списания с номерами больше, чем номер транзакции списания записанной в таблице ассounts.
 // Возвращает максимальный номер транзакции списания, максимальный номер транзакции начисления для этого пользователя и его баланс
-func getBalance(ctx context.Context, tx *sqlx.Tx, id UserId) (balance int64, transactionNumSend int64, transactionNumRecv int64, err error) {
+func getBalance(ctx context.Context, tx *sqlx.Tx, userId UserId) (balance int64, transactionNumSend int64, transactionNumRecv int64, err error) {
 	rowsAccountBalance := tx.QueryRowxContext(
 		ctx,
 		`SELECT transaction_num_send, transaction_num_recv, sum FROM accounts WHERE user_id = $1`,
-		id)
+		userId)
 	accountBalance := &RawAccountBalance{}
 	err = rowsAccountBalance.StructScan(accountBalance)
 	if err != nil && err != sql.ErrNoRows {
@@ -205,7 +205,7 @@ func getBalance(ctx context.Context, tx *sqlx.Tx, id UserId) (balance int64, tra
 			SELECT -1*SUM(amount) s, MAX(transaction_num) tn_send, $3 tn_recv FROM transactions
 				WHERE user_from = $1 AND transaction_num > $2
 		) sums
-	`, id, accountBalance.TransactionNumSend, accountBalance.TransactionNumRecv)
+	`, userId, accountBalance.TransactionNumSend, accountBalance.TransactionNumRecv)
 	transactionBalance := &RawTransactionBalance{}
 	err = rowsTransactionsBalance.StructScan(transactionBalance)
 	if err != nil && err != sql.ErrNoRows {
