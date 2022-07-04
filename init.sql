@@ -5,8 +5,7 @@ create table if not exists accounts
 (
     user_id         bigint not null
         primary key,
-    transaction_num_send bigint not null,
-    transaction_num_recv bigint not null,
+    transaction_num bigint not null,
     sum             bigint not null
 );
 
@@ -14,10 +13,7 @@ alter table accounts
     owner to postgres;
 
 create index user_id_transaction_num_recv_idx
-    on accounts (user_id, transaction_num_recv);
-
-create index user_id_transaction_num_send_idx
-    on accounts (user_id, transaction_num_send);
+    on accounts (user_id, transaction_num);
 
 create table if not exists transactions
 (
