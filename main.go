@@ -221,8 +221,8 @@ func getBalance(ctx context.Context, tx *sqlx.Tx, userId UserId) (balance int64,
 }
 
 // updateBalance Обновляет баланс пользователя в таблице accounts.
-// Записывает в таблицу accounts строку со значением последнего номера транзакции, в которой произошло начисление на счет пользователя,
-// Последнего номера транзакции, в котором произошло списаниие со счета пользователя
+// Записывает в таблицу accounts строку со значением последнего номера транзакции,
+// в которой произошло начисление или списание со счета пользователя,
 // И баланса, который был посчитан на момент указанных транзакций.
 func updateBalance(ctx context.Context, userId UserId, balance int64, transactionNum int64, tx *sqlx.Tx) error {
 	rows, err := tx.QueryxContext(ctx, `INSERT INTO accounts (user_id, transaction_num, sum)
